@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="farmGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22c55e" />
+      <stop offset="50%" stop-color="#15803d" />
+      <stop offset="100%" stop-color="#052e16" />
+    </linearGradient>
+  </defs>
+  <!-- Background rounded rectangle -->
+  <rect width="64" height="64" rx="16" fill="url(#farmGrad)" />
+  
+  <!-- Market Stall Roof -->
+  <path d="M14 26 L19 16 L45 16 L50 26 Z" fill="#ffffff" />
+  <path d="M14 26 Q18.5 29.5 23 26 Q27.5 29.5 32 26 Q36.5 29.5 41 26 Q45.5 29.5 50 26 L50 24 L14 24 Z" fill="#bbf7d0" />
+  
+  <!-- Store pillars & counter -->
+  <rect x="18" y="26" width="3.5" height="18" fill="#ffffff" />
+  <rect x="42.5" y="26" width="3.5" height="18" fill="#ffffff" />
+  <rect x="15" y="44" width="34" height="4" rx="2" fill="#ffffff" />
+  
+  <!-- Sprout / Fresh Leaf growing in center -->
+  <path d="M32 43 V33 C32 29 37 28 39 31 C39 35 35 37 32 37" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" fill="#22c55e" />
+  <path d="M32 37 C29 37 25 35 25 31 C27 28 32 29 32 33" stroke="#86efac" stroke-width="2.5" stroke-linecap="round" fill="#4ade80" />
+</svg>

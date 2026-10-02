@@ -1,0 +1,102 @@
+const express = require('express');
+const path = require('path');
+const dotenv = require('dotenv');
+const cors = require('cors');
+const connectDB = require('./src/config/db');
+const http = require('http');
+const { Server } = require('socket.io');
+const { notFound, errorHandler } = require('./src/middleware/errorMiddleware');
+const passport = require('passport');
+const session = require('express-session');
+
+// Load env vars
+dotenv.config();
+
+// Register Passport Google strategy
+require('./src/controllers/googleAuthController');
+
+// Connect to database
+connectDB();
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  },
+});
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cors({
+  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  credentials: true,
+}));
+
+// Session middleware (only used during OAuth redirect flow)
+app.use(
+  session({
+    secret: process.env.JWT_SECRET || 'farmdirect-session-secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false, maxAge: 10 * 60 * 1000 }, // 10 min — just for OAuth
+  })
+);
+
+// Passport init
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Static folder for uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Define Routes
+app.use('/api/auth', require('./src/routes/authRoutes'));
+app.use('/api/users', require('./src/routes/userRoutes'));
+app.use('/api/uploads', require('./src/routes/uploadRoutes'));
+app.use('/api/products', require('./src/routes/productRoutes'));
+app.use('/api/categories', require('./src/routes/categoryRoutes'));
+app.use('/api/orders', require('./src/routes/orderRoutes'));
+app.use('/api/reviews', require('./src/routes/reviewRoutes'));
+app.use('/api/cart', require('./src/routes/cartRoutes'));
+app.use('/api/contact', require('./src/routes/contactRoutes'));
+app.use('/api/analytics', require('./src/routes/analyticsRoutes'));
+app.use('/api/payment', require('./src/routes/paymentRoutes'));
+app.use('/api/notifications', require('./src/routes/notificationRoutes'));
+app.use('/api/uploads', require('./src/routes/uploadRoutes'));
+
+// Serve uploads folder statically
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+app.get('/', (req, res) => {
+  res.send('API is running...');
+});
+
+// Error Middleware
+app.use(notFound);
+app.use(errorHandler);
+
+// Socket.io connection
+app.set('io', io);
+
+io.on('connection', (socket) => {
+  // console.log(`Socket connected: ${socket.id}`);
+  
+  // Clients will emit 'join' with their user ID so we can send targeted notifications
+  socket.on('join', (userId) => {
+    socket.join(userId);
+    // console.log(`User ${userId} joined their room`);
+  });
+
+  socket.on('disconnect', () => {
+    // console.log(`Socket disconnected: ${socket.id}`);
+  });
+});
+
+const PORT = process.env.PORT || 5000;
+
+server.listen(PORT, () => {
+  console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+});
