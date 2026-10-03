@@ -56,7 +56,7 @@ app.use(
     secret: process.env.JWT_SECRET || 'farmdirect-session-secret',
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false, maxAge: 10 * 60 * 1000 }, // 10 min — just for OAuth
+    cookie: { secure: process.env.NODE_ENV === 'production', maxAge: 10 * 60 * 1000 }, // 10 min — just for OAuth
   })
 );
 
@@ -80,10 +80,6 @@ app.use('/api/contact', require('./src/routes/contactRoutes'));
 app.use('/api/analytics', require('./src/routes/analyticsRoutes'));
 app.use('/api/payment', require('./src/routes/paymentRoutes'));
 app.use('/api/notifications', require('./src/routes/notificationRoutes'));
-app.use('/api/uploads', require('./src/routes/uploadRoutes'));
-
-// Serve uploads folder statically
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.get('/', (req, res) => {
   res.send('API is running...');
