@@ -3,7 +3,7 @@ import { getSessionUser, clearSessionUser } from './authStorage';
 
 // In local dev: Vite proxy forwards /api/* → localhost:5001
 // In production: Vercel rewrites /api/* → Render backend
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = '/api';
 
 const api = axios.create({
   baseURL: API_URL,

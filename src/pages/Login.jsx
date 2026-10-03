@@ -99,7 +99,7 @@ export default function Login() {
   };
 
   const handleGoogleLogin = () => {
-    const apiBase = import.meta.env.VITE_API_URL || '/api';
+    const apiBase = '/api';
     window.location.href = `${apiBase}/auth/google?role=${accountType}`;
   };
 

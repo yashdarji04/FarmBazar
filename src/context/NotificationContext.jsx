@@ -105,7 +105,7 @@ export function NotificationProvider({ children }) {
 
     fetchNotifications();
 
-    const socketUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5001/api').replace(/\/api$/, '');
+    const socketUrl = import.meta.env.MODE === 'production' ? 'https://farmbazar-backend-lpu4.onrender.com' : 'http://localhost:5001';
     const socket = io(socketUrl);
     socketRef.current = socket;
 
