@@ -22,7 +22,7 @@ const app = express();
 const server = http.createServer(app);
 // Allow requests from Vercel production URL and localhost dev server
 const allowedOrigins = [
-  process.env.CLIENT_URL,          // e.g. https://farmbazar.vercel.app
+  process.env.CLIENT_URL,          // e.g. https://farmbazar-web.vercel.app
   'http://localhost:5173',
   'http://localhost:4173',
 ].filter(Boolean);
