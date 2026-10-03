@@ -105,7 +105,8 @@ export function NotificationProvider({ children }) {
 
     fetchNotifications();
 
-    const socket = io('http://localhost:5001');
+    const socketUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5001/api').replace(/\/api$/, '');
+    const socket = io(socketUrl);
     socketRef.current = socket;
 
     socket.on('connect', () => {

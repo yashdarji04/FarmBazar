@@ -50,3 +50,5 @@ Thumbs.db
 # Custom
 backend/db_backup/
 backend/*.cjs
+.vercel
+.env*

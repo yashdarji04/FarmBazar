@@ -20,20 +20,35 @@ connectDB();
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+// Allow requests from Vercel production URL and localhost dev server
+const allowedOrigins = [
+  process.env.CLIENT_URL,          // e.g. https://farmbazar.vercel.app
+  'http://localhost:5173',
+  'http://localhost:4173',
+].filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.some(o => origin.startsWith(o))) {
+      return callback(null, true);
+    }
+    callback(new Error(`CORS blocked: ${origin}`));
   },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+const io = new Server(server, {
+  cors: corsOptions,
 });
 
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
-  credentials: true,
-}));
+app.use(cors(corsOptions));
 
 // Session middleware (only used during OAuth redirect flow)
 app.use(
