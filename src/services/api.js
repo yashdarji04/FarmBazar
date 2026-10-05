@@ -2,8 +2,10 @@ import axios from 'axios';
 import { getSessionUser, clearSessionUser } from './authStorage';
 
 // In local dev: Vite proxy forwards /api/* → localhost:5001
-// In production: Vercel rewrites /api/* → Render backend
-const API_URL = '/api';
+// In production: Connect directly to Render to avoid Vercel proxy timeouts
+const API_URL = import.meta.env.MODE === 'production' 
+  ? 'https://farmbazar-backend-lpu4.onrender.com/api' 
+  : '/api';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -18,6 +20,20 @@ const api = axios.create({
 // other — see services/authStorage.js for why.
 api.interceptors.request.use(
   (config) => {
+    // Fix wrong upload URLs used in components (e.g. api.post('/uploads'))
+    if (config.url === '/uploads' || config.url.startsWith('/uploads?')) {
+      config.url = '/api/uploads';
+      if (import.meta.env.MODE === 'production') {
+        config.url = 'https://farmbazar-backend-lpu4.onrender.com/api/uploads';
+      }
+    }
+    // Handle any absolute paths explicitly starting with /api/
+    else if (config.url.startsWith('/api/')) {
+      if (import.meta.env.MODE === 'production') {
+        config.url = 'https://farmbazar-backend-lpu4.onrender.com' + config.url;
+      }
+    }
+
     if (config.data instanceof FormData) {
       delete config.headers['Content-Type'];
     }

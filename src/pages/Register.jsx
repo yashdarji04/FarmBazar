@@ -108,7 +108,9 @@ export default function Register() {
   };
 
   const handleGoogleLogin = () => {
-    const apiBase = '/api';
+    const apiBase = import.meta.env.MODE === 'production' 
+      ? 'https://farmbazar-backend-lpu4.onrender.com/api' 
+      : '/api';
     window.location.href = `${apiBase}/auth/google?role=${accountType}`;
   };
 
