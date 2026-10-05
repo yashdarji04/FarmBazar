@@ -14,7 +14,7 @@ passport.use(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: `${process.env.SERVER_URL || 'http://localhost:5001'}/api/auth/google/callback`,
+      callbackURL: `${process.env.SERVER_URL || 'https://farm-bazar.vercel.app'}/api/auth/google/callback`,
       passReqToCallback: true,
     },
     async (req, accessToken, refreshToken, profile, done) => {
@@ -146,7 +146,7 @@ const googleAuth = (req, res, next) => {
 const googleAuthCallback = [
   (req, res, next) => {
     passport.authenticate('google', { session: false }, (err, data) => {
-      const clientURL = process.env.CLIENT_URL || 'http://localhost:5173';
+      const clientURL = process.env.CLIENT_URL || 'https://farm-bazar.vercel.app';
 
       if (err) {
         // Strip the "Role Mismatch: " prefix — the rest is the user-facing message
@@ -168,7 +168,7 @@ const googleAuthCallback = [
   asyncHandler(async (req, res) => {
     const { user, isNew } = req.user;
     const token = generateToken(user._id);
-    const clientURL = process.env.CLIENT_URL || 'http://localhost:5173';
+    const clientURL = process.env.CLIENT_URL || 'https://farm-bazar.vercel.app';
 
     const isFirstTime = !user.lastLogin;
     user.lastLogin = new Date();
