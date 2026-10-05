@@ -22,15 +22,24 @@ const app = express();
 const server = http.createServer(app);
 // Allow requests from Vercel production URL and localhost dev server
 const allowedOrigins = [
-  process.env.CLIENT_URL,          // e.g. https://farmbazar-web.vercel.app
-  'http://localhost:5173',
-  'http://localhost:4173',
+  process.env.CLIENT_URL,          
 ].filter(Boolean);
 
 const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, Postman)
     if (!origin) return callback(null, true);
+    
+    // Always allow localhost during development
+    if (origin.startsWith('http://localhost:')) {
+      return callback(null, true);
+    }
+    
+    // Allow ANY vercel deployment domain so Vercel frontend always works
+    if (origin.endsWith('.vercel.app') || origin.includes('vercel.app')) {
+      return callback(null, true);
+    }
+    
     if (allowedOrigins.some(o => origin.startsWith(o))) {
       return callback(null, true);
     }
