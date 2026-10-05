@@ -21,5 +21,9 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "env": {
+    "SERVER_URL": "https://farm-bazar.vercel.app",
+    "CLIENT_URL": "https://farm-bazar.vercel.app"
+  }
 }
