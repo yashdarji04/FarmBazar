@@ -29,6 +29,7 @@ export default function FarmerDashboard() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [updatingOrderId, setUpdatingOrderId] = useState(null);
   
   // Cancel Order State
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -125,16 +126,48 @@ export default function FarmerDashboard() {
   };
 
   const processOrder = async (orderId, newStatus = 'Accepted', reason = '') => {
+    setUpdatingOrderId(orderId);
+    const prevOrders = [...orders];
+
+    // Optimistic instant UI update
+    setOrders((currentOrders) =>
+      currentOrders.map((o) => {
+        if (o._id !== orderId) return o;
+        return {
+          ...o,
+          orderStatus: newStatus,
+          cancelReason: reason || o.cancelReason,
+          acceptedAt: newStatus === 'Accepted' ? new Date().toISOString() : o.acceptedAt,
+          packedAt: newStatus === 'Packed' ? new Date().toISOString() : o.packedAt,
+          outForDeliveryAt: newStatus === 'Out For Delivery' ? new Date().toISOString() : o.outForDeliveryAt,
+          deliveredAt: newStatus === 'Delivered' ? new Date().toISOString() : o.deliveredAt,
+          cancelledAt: newStatus === 'Cancelled' ? new Date().toISOString() : o.cancelledAt,
+        };
+      })
+    );
+
     try {
       const payload = { status: newStatus };
       if (reason) payload.cancelReason = reason;
       await api.put(`/orders/${orderId}/status`, payload);
-      const ordersRes = await api.get('/orders/farmer/all');
-      setOrders(ordersRes.data.data);
+      
+      // Background sync without blocking UI
+      api.get('/orders/farmer/all')
+        .then((ordersRes) => {
+          if (ordersRes.data?.data) {
+            setOrders(ordersRes.data.data);
+          }
+        })
+        .catch((err) => console.error('Silent orders resync error:', err));
+
       toast.success(`Order ${newStatus.toLowerCase()} successfully`);
     } catch (error) {
-      console.error(error);
-      toast.error('Error updating order');
+      console.error('Error updating order status:', error);
+      // Rollback to previous state on failure
+      setOrders(prevOrders);
+      toast.error(error.response?.data?.message || 'Error updating order');
+    } finally {
+      setUpdatingOrderId(null);
     }
   };
 
@@ -240,11 +273,15 @@ export default function FarmerDashboard() {
         images: imagePath ? [imagePath] : []
       };
 
-      await api.post('/products', productData);
+      const createRes = await api.post('/products', productData);
       
-      // Refresh products
-      const productsRes = await api.get(`/products?farmerId=${user._id}&limit=100`);
-      setProducts(productsRes.data.data.products);
+      // Update products state directly
+      if (createRes.data?.data) {
+        setProducts((prev) => [createRes.data.data, ...prev]);
+      } else {
+        const productsRes = await api.get(`/products?farmerId=${user._id}&limit=100`);
+        setProducts(productsRes.data.data.products);
+      }
       
       setShowAddModal(false);
       setNewProduct({ name: '', description: '', category: '', price: null, unit: 'kg', stock: null, organic: false, imageFile: null });
@@ -302,9 +339,13 @@ export default function FarmerDashboard() {
       isOrganic: editingProduct.organic || false,
       images: imagePath ? [imagePath] : editingProduct.images || []
     };
-    await api.put(`/products/${editingProduct._id}`, productData);
-    const productsRes = await api.get(`/products?farmerId=${user._id}&limit=100`);
-    setProducts(productsRes.data.data.products);
+    const updateRes = await api.put(`/products/${editingProduct._id}`, productData);
+    if (updateRes.data?.data) {
+      setProducts((prev) => prev.map((p) => (p._id === editingProduct._id ? { ...p, ...updateRes.data.data } : p)));
+    } else {
+      const productsRes = await api.get(`/products?farmerId=${user._id}&limit=100`);
+      setProducts(productsRes.data.data.products);
+    }
     toast.success('Product updated successfully!');
     setShowEditModal(false);
     setEditingProduct(null);
@@ -326,12 +367,15 @@ const handleDeleteProduct = async (productId) => {
       type: 'danger',
     });
     if (ok) {
+      const prevProducts = [...products];
+      // Optimistic instant delete from list
+      setProducts((prev) => prev.filter((p) => p._id !== productId));
       try {
         await api.delete(`/products/${productId}`);
-        const productsRes = await api.get(`/products?farmerId=${user._id}&limit=100`);
-        setProducts(productsRes.data.data.products);
+        toast.success('Product deleted successfully');
       } catch (error) {
         console.error(error);
+        setProducts(prevProducts);
         toast.error('Error deleting product');
       }
     }
@@ -516,8 +560,20 @@ const handleDeleteProduct = async (productId) => {
               </div>
 
               <div className="pt-2">
-                <button onClick={() => processOrder(order._id, 'Accepted')} className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2 group-hover:scale-[1.02]">
-                  <i className="pi pi-check"></i> Accept Order
+                <button
+                  disabled={updatingOrderId === order._id}
+                  onClick={() => processOrder(order._id, 'Accepted')}
+                  className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-black text-xs uppercase tracking-wider transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2 group-hover:scale-[1.02]"
+                >
+                  {updatingOrderId === order._id ? (
+                    <>
+                      <i className="pi pi-spin pi-spinner text-xs"></i> Accepting...
+                    </>
+                  ) : (
+                    <>
+                      <i className="pi pi-check text-xs"></i> Accept Order
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -690,20 +746,60 @@ const handleDeleteProduct = async (productId) => {
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Status: <span className="text-slate-700 dark:text-white">{order.orderStatus}</span></span>
                 <div>
                   {(() => {
+                    const isProcessing = updatingOrderId === order._id;
                     if (order.orderStatus === 'Placed' || order.orderStatus === 'Pending') {
                       return (
                         <div className="flex gap-2">
-      <SEO title="Farmer Dashboard - FarmBazar" description="Manage your farm products and orders on FarmBazar." />
-                          <button onClick={() => processOrder(order._id, 'Accepted')} className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl text-xs font-bold transition-all shadow-sm text-center shadow-indigo-500/30">Accept</button>
-                          <button onClick={() => handleCancelClick(order._id)} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-xs font-bold transition-all shadow-sm text-center shadow-red-500/30">Cancel</button>
+                          <button
+                            disabled={isProcessing}
+                            onClick={() => processOrder(order._id, 'Accepted')}
+                            className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-60 text-white rounded-xl text-xs font-bold transition-all shadow-sm text-center shadow-indigo-500/30 flex items-center gap-1.5"
+                          >
+                            {isProcessing && <i className="pi pi-spin pi-spinner text-xs"></i>}
+                            Accept
+                          </button>
+                          <button
+                            disabled={isProcessing}
+                            onClick={() => handleCancelClick(order._id)}
+                            className="px-4 py-2 bg-red-500 hover:bg-red-600 disabled:opacity-60 text-white rounded-xl text-xs font-bold transition-all shadow-sm text-center shadow-red-500/30"
+                          >
+                            Cancel
+                          </button>
                         </div>
                       );
                     } else if (order.orderStatus === 'Accepted') {
-                      return <button onClick={() => processOrder(order._id, 'Packed')} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-xs font-bold transition-all shadow-sm text-center shadow-blue-500/30">Mark as Packed</button>;
+                      return (
+                        <button
+                          disabled={isProcessing}
+                          onClick={() => processOrder(order._id, 'Packed')}
+                          className="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:opacity-60 text-white rounded-xl text-xs font-bold transition-all shadow-sm text-center shadow-blue-500/30 flex items-center gap-1.5"
+                        >
+                          {isProcessing && <i className="pi pi-spin pi-spinner text-xs"></i>}
+                          Mark as Packed
+                        </button>
+                      );
                     } else if (order.orderStatus === 'Packed') {
-                      return <button onClick={() => processOrder(order._id, 'Out For Delivery')} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold transition-all shadow-sm text-center shadow-orange-500/30">Send for Delivery</button>;
+                      return (
+                        <button
+                          disabled={isProcessing}
+                          onClick={() => processOrder(order._id, 'Out For Delivery')}
+                          className="px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white rounded-xl text-xs font-bold transition-all shadow-sm text-center shadow-orange-500/30 flex items-center gap-1.5"
+                        >
+                          {isProcessing && <i className="pi pi-spin pi-spinner text-xs"></i>}
+                          Send for Delivery
+                        </button>
+                      );
                     } else if (order.orderStatus === 'Out For Delivery') {
-                      return <button onClick={() => processOrder(order._id, 'Delivered')} className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all shadow-sm text-center shadow-emerald-500/30">Mark Delivered</button>;
+                      return (
+                        <button
+                          disabled={isProcessing}
+                          onClick={() => processOrder(order._id, 'Delivered')}
+                          className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white rounded-xl text-xs font-bold transition-all shadow-sm text-center shadow-emerald-500/30 flex items-center gap-1.5"
+                        >
+                          {isProcessing && <i className="pi pi-spin pi-spinner text-xs"></i>}
+                          Mark Delivered
+                        </button>
+                      );
                     } else if (order.orderStatus === 'Delivered') {
                       return <span className="px-4 py-2 bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 rounded-xl text-xs font-bold inline-block text-center border border-emerald-100 dark:border-emerald-500/20 shadow-sm">Delivered <i className="pi pi-check text-[10px] ml-1"></i></span>;
                     } else if (order.orderStatus === 'Cancelled') {
@@ -808,6 +904,7 @@ const handleDeleteProduct = async (productId) => {
   if (!isApproved) {
     return (
       <AnimatedPage className="min-h-screen bg-slate-50 dark:bg-[#0a0f0a] flex flex-col font-sans relative overflow-hidden">
+        <SEO title="Farmer Dashboard - FarmBazar" description="Manage your farm products and orders on FarmBazar." />
         {/* Decorative Background Patterns */}
         <div className="absolute inset-0 z-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#15803d 2px, transparent 2px)', backgroundSize: '32px 32px' }}></div>
         <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
@@ -847,6 +944,7 @@ const handleDeleteProduct = async (productId) => {
 
   return (
     <AnimatedPage className="min-h-screen bg-slate-50 dark:bg-[#0a0f0a] flex flex-col font-sans relative overflow-hidden">
+      <SEO title="Farmer Dashboard - FarmBazar" description="Manage your farm products and orders on FarmBazar." />
       {/* Rich Decorative Background */}
       <div className="absolute inset-0 z-0 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-[0.03] dark:opacity-[0.02]"></div>
       <div className="absolute top-0 left-0 w-full h-[600px] bg-gradient-to-br from-emerald-100/80 via-teal-50/40 to-transparent dark:from-emerald-950/60 dark:via-teal-950/20 dark:to-transparent z-0 pointer-events-none"></div>

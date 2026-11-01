@@ -439,53 +439,69 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
 
   // ── Send deferred farmer email for COD orders that just became Completed ──
   // This catches COD orders where payment only confirms on delivery.
-  if (updatedOrder.paymentStatus === 'Completed') {
+  const emailPromises = [];
+
+  if (updatedOrder.paymentStatus === 'Completed' && updatedOrder.farmerOrders) {
     for (const subOrder of updatedOrder.farmerOrders) {
-      try {
-        const farmerIdStr = subOrder.farmerId?._id?.toString() || subOrder.farmerId?.toString();
-        const alreadySent = (updatedOrder.farmerEmailsSent || []).includes(farmerIdStr);
-        if (!alreadySent && farmerIdStr) {
-          const fp = await FarmerProfile.findById(farmerIdStr);
-          if (fp && fp.userId) {
-            const farmerUser = await User.findById(fp.userId).select('name email');
-            const customer   = await User.findById(updatedOrder.customerId).select('name email');
-            if (farmerUser && farmerUser.email && customer) {
-              await sendFarmerOrderNotificationEmail(farmerUser, customer, subOrder, updatedOrder);
-              await Order.findByIdAndUpdate(updatedOrder._id, {
-                $addToSet: { farmerEmailsSent: farmerIdStr },
-              });
+      const farmerIdStr = subOrder.farmerId?._id?.toString() || subOrder.farmerId?.toString();
+      const alreadySent = (updatedOrder.farmerEmailsSent || []).includes(farmerIdStr);
+      if (!alreadySent && farmerIdStr) {
+        emailPromises.push((async () => {
+          try {
+            const fp = await FarmerProfile.findById(farmerIdStr);
+            if (fp && fp.userId) {
+              const [farmerUser, customer] = await Promise.all([
+                User.findById(fp.userId).select('name email'),
+                User.findById(updatedOrder.customerId).select('name email'),
+              ]);
+              if (farmerUser && farmerUser.email && customer) {
+                await sendFarmerOrderNotificationEmail(farmerUser, customer, subOrder, updatedOrder);
+                await Order.findByIdAndUpdate(updatedOrder._id, {
+                  $addToSet: { farmerEmailsSent: farmerIdStr },
+                });
+              }
             }
+          } catch (emailErr) {
+            console.error('[EmailService] Deferred farmer email failed:', emailErr.message);
           }
-        }
-      } catch (emailErr) {
-        console.error('[EmailService] Deferred farmer email failed:', emailErr.message);
+        })());
       }
     }
   }
 
   // ── Send order completion email to farmers whose sub-orders are Delivered ──
-  for (const subOrder of updatedOrder.farmerOrders) {
-    if (subOrder.farmerOrderStatus === 'Delivered') {
-      const farmerIdStr = subOrder.farmerId?._id?.toString() || subOrder.farmerId?.toString();
-      const alreadySentCompletion = (updatedOrder.farmerCompletionEmailsSent || []).includes(farmerIdStr);
-      if (!alreadySentCompletion && farmerIdStr) {
-        try {
-          const fp = await FarmerProfile.findById(farmerIdStr);
-          if (fp && fp.userId) {
-            const farmerUser = await User.findById(fp.userId).select('name email');
-            const customer   = await User.findById(updatedOrder.customerId).select('name email');
-            if (farmerUser && farmerUser.email && customer) {
-              await sendFarmerOrderCompletedEmail(farmerUser, customer, subOrder, updatedOrder);
-              await Order.findByIdAndUpdate(updatedOrder._id, {
-                $addToSet: { farmerCompletionEmailsSent: farmerIdStr },
-              });
+  if (updatedOrder.farmerOrders) {
+    for (const subOrder of updatedOrder.farmerOrders) {
+      if (subOrder.farmerOrderStatus === 'Delivered') {
+        const farmerIdStr = subOrder.farmerId?._id?.toString() || subOrder.farmerId?.toString();
+        const alreadySentCompletion = (updatedOrder.farmerCompletionEmailsSent || []).includes(farmerIdStr);
+        if (!alreadySentCompletion && farmerIdStr) {
+          emailPromises.push((async () => {
+            try {
+              const fp = await FarmerProfile.findById(farmerIdStr);
+              if (fp && fp.userId) {
+                const [farmerUser, customer] = await Promise.all([
+                  User.findById(fp.userId).select('name email'),
+                  User.findById(updatedOrder.customerId).select('name email'),
+                ]);
+                if (farmerUser && farmerUser.email && customer) {
+                  await sendFarmerOrderCompletedEmail(farmerUser, customer, subOrder, updatedOrder);
+                  await Order.findByIdAndUpdate(updatedOrder._id, {
+                    $addToSet: { farmerCompletionEmailsSent: farmerIdStr },
+                  });
+                }
+              }
+            } catch (completionErr) {
+              console.error('[EmailService] Farmer completion email failed:', completionErr.message);
             }
-          }
-        } catch (completionErr) {
-          console.error('[EmailService] Farmer completion email failed:', completionErr.message);
+          })());
         }
       }
     }
+  }
+
+  if (emailPromises.length > 0) {
+    await Promise.allSettled(emailPromises);
   }
 
   // Notify customer via Socket.io + persist notification

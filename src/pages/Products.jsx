@@ -70,6 +70,7 @@ export default function Products() {
     }
     try {
       await api.post('/cart', { productId, quantity: 1 });
+      window.dispatchEvent(new Event('cartUpdated'));
       toast.success('Added to fresh harvest cart!');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Error adding to cart');

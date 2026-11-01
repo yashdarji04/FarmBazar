@@ -131,6 +131,7 @@ function StripeCardForm({ onSuccess, total, address, cart, user, paymentMethod, 
     });
 
     await api.delete('/cart');
+    window.dispatchEvent(new Event('cartUpdated'));
 
     if (res.data.success) {
       toast.success('Payment successful! Order placed.');

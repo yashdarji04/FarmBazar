@@ -144,6 +144,7 @@ export default function ProductDetails() {
     }
     try {
       await api.post('/cart', { productId: product._id, quantity });
+      window.dispatchEvent(new Event('cartUpdated'));
       toast.success(`Added ${quantity} ${product.unit || 'unit'}(s) to your cart!`);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Error adding to cart');

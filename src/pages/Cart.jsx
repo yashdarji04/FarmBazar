@@ -30,22 +30,58 @@ export default function Cart() {
 
   const updateQuantity = async (productId, quantity) => {
     if (quantity < 1) return removeItem(productId);
+
+    // Optimistically update cart state
+    setCart((prev) => {
+      if (!prev || !prev.items) return prev;
+      const updatedItems = prev.items.map((item) => {
+        const pId = item.product?._id || item.product;
+        if (pId === productId) {
+          return { ...item, quantity };
+        }
+        return item;
+      });
+      const newTotal = updatedItems.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0);
+      return { ...prev, items: updatedItems, totalAmount: newTotal };
+    });
+    window.dispatchEvent(new Event('cartUpdated'));
+
     try {
-      await api.put(`/cart/${productId}`, { quantity });
-      fetchCart();
+      const res = await api.put(`/cart/${productId}`, { quantity });
+      if (res.data?.data) {
+        setCart(res.data.data);
+      }
+      window.dispatchEvent(new Event('cartUpdated'));
     } catch (error) {
       toast.error(error.response?.data?.message || 'Error updating quantity');
+      fetchCart();
     }
   };
 
   const removeItem = async (productId) => {
+    // Optimistically update cart state
+    setCart((prev) => {
+      if (!prev || !prev.items) return prev;
+      const updatedItems = prev.items.filter((item) => {
+        const pId = item.product?._id || item.product;
+        return pId !== productId;
+      });
+      const newTotal = updatedItems.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0);
+      return { ...prev, items: updatedItems, totalAmount: newTotal };
+    });
+    window.dispatchEvent(new Event('cartUpdated'));
+
     try {
-      await api.delete(`/cart/${productId}`);
-      fetchCart();
+      const res = await api.delete(`/cart/${productId}`);
+      if (res.data?.data) {
+        setCart(res.data.data);
+      }
+      window.dispatchEvent(new Event('cartUpdated'));
       toast.success('Item removed from cart');
     } catch (error) {
       console.error('Error removing item', error);
       toast.error(error.response?.data?.message || 'Error removing item');
+      fetchCart();
     }
   };
 

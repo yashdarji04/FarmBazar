@@ -168,24 +168,71 @@ export default function AdminDashboard() {
   };
 
   const handleApproveFarmer = async (farmerId) => {
+    // Optimistic UI update
+    setUsers((prev) =>
+      prev.map((u) => {
+        if (u._id !== farmerId) return u;
+        return {
+          ...u,
+          isFarmerApproved: true,
+          farmerProfile: {
+            ...(u.farmerProfile || {}),
+            verificationStatus: 'approved',
+          },
+        };
+      })
+    );
+    setStats((prev) =>
+      prev
+        ? {
+            ...prev,
+            pendingFarmers: Math.max(0, (prev.pendingFarmers || 1) - 1),
+            approvedFarmers: (prev.approvedFarmers || 0) + 1,
+          }
+        : prev
+    );
+
     try {
       await api.put(`/users/admin/farmers/${farmerId}/approve`);
       toast.success("Farmer approved successfully!");
-      fetchDashboardData();
     } catch (error) {
       console.error(error);
       toast.error("Failed to approve farmer");
+      fetchDashboardData();
     }
   };
 
   const handleRejectFarmer = async (farmerId) => {
+    // Optimistic UI update
+    setUsers((prev) =>
+      prev.map((u) => {
+        if (u._id !== farmerId) return u;
+        return {
+          ...u,
+          isFarmerApproved: false,
+          farmerProfile: {
+            ...(u.farmerProfile || {}),
+            verificationStatus: 'rejected',
+          },
+        };
+      })
+    );
+    setStats((prev) =>
+      prev
+        ? {
+            ...prev,
+            pendingFarmers: Math.max(0, (prev.pendingFarmers || 1) - 1),
+          }
+        : prev
+    );
+
     try {
       await api.put(`/users/admin/farmers/${farmerId}/reject`);
       toast.success("Farmer rejected successfully!");
-      fetchDashboardData();
     } catch (error) {
       console.error(error);
       toast.error("Failed to reject farmer");
+      fetchDashboardData();
     }
   };
 
@@ -200,26 +247,43 @@ export default function AdminDashboard() {
       toast.error("Please provide a reason");
       return;
     }
+    const targetId = userToRemove.id;
+    setRemoveDialogVisible(false);
+
+    // Optimistic UI update
+    setUsers((prev) => prev.filter((u) => u._id !== targetId));
+    setStats((prev) =>
+      prev
+        ? {
+            ...prev,
+            totalUsers: Math.max(0, (prev.totalUsers || 1) - 1),
+          }
+        : prev
+    );
     
     try {
-      await api.delete(`/users/admin/${userToRemove.id}/remove`, { data: { reason: removeReason } });
+      await api.delete(`/users/admin/${targetId}/remove`, { data: { reason: removeReason } });
       toast.success("User removed successfully and email sent!");
-      fetchDashboardData();
-      setRemoveDialogVisible(false);
     } catch (error) {
       console.error(error);
       toast.error(error.response?.data?.message || "Failed to remove user");
+      fetchDashboardData();
     }
   };
 
   const handleResolveInquiry = async (inquiryId) => {
+    // Optimistic UI update
+    setInquiries((prev) =>
+      prev.map((inq) => (inq._id === inquiryId ? { ...inq, status: 'Resolved' } : inq))
+    );
+
     try {
       await api.put(`/contact/admin/${inquiryId}/status`, { status: 'Resolved' });
       toast.success("Inquiry marked as resolved!");
-      fetchDashboardData();
     } catch (error) {
       console.error(error);
       toast.error("Failed to resolve inquiry");
+      fetchDashboardData();
     }
   };
 

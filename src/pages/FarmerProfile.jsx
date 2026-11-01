@@ -55,6 +55,7 @@ export default function FarmerProfile() {
     }
     try {
       await api.post('/cart', { productId, quantity: 1 });
+      window.dispatchEvent(new Event('cartUpdated'));
       toast.success('Added to cart!');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Error adding to cart');
