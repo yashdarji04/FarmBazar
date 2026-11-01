@@ -11,6 +11,8 @@ const session = require('express-session');
 
 // Load env vars
 dotenv.config();
+dotenv.config({ path: path.join(__dirname, '.env') });
+dotenv.config({ path: path.join(__dirname, '../.env') });
 
 // Register Passport Google strategy
 require('./src/controllers/googleAuthController');

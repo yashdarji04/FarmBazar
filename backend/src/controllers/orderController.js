@@ -3,7 +3,12 @@ const Order = require('../models/Order');
 const Product = require('../models/Product');
 const Payment = require('../models/Payment');
 const FarmerProfile = require('../models/FarmerProfile');
-const { sendOrderInvoiceEmail } = require('../services/emailService');
+const User = require('../models/User');
+const {
+  sendOrderInvoiceEmail,
+  sendFarmerOrderNotificationEmail,
+  sendFarmerOrderCompletedEmail,
+} = require('../services/emailService');
 const { createNotification, notifyAllAdmins } = require('../utils/notificationHelper');
 
 // @desc    Create new order (with farmer splitting)
@@ -128,18 +133,26 @@ const addOrderItems = asyncHandler(async (req, res) => {
     }
   }
 
-  // Send order invoice email asynchronously
-  sendOrderInvoiceEmail(req.user, createdOrder).catch((err) =>
-    console.error('[EmailService] Failed to send order invoice notification:', err.message)
-  );
+  // Send order invoice email to customer (await for serverless environments like Vercel)
+  try {
+    await sendOrderInvoiceEmail(req.user, createdOrder);
+  } catch (err) {
+    console.error('[EmailService] Failed to send order invoice notification:', err.message);
+  }
 
-  // Notify each farmer via Socket.io + persist notification
+  // ── Farmer notifications: in-app (Socket.io) + email ──────────────────────
+  // Email is only sent when payment is confirmed (Completed).
+  // For COD (Pending) orders the email is deferred to the payment-update flow.
+  // The farmerEmailsSent array on the Order document prevents duplicate emails.
   const io = req.app.get('io');
-  if (io) {
-    for (const subOrder of createdOrder.farmerOrders) {
-      try {
-        const farmerProfile = await FarmerProfile.findById(subOrder.farmerId);
-        if (farmerProfile && farmerProfile.userId) {
+  const paymentConfirmed = createdOrder.paymentStatus === 'Completed';
+
+  for (const subOrder of createdOrder.farmerOrders) {
+    try {
+      const farmerProfile = await FarmerProfile.findById(subOrder.farmerId);
+      if (farmerProfile && farmerProfile.userId) {
+        // ── In-app notification (Socket.io) ──
+        if (io) {
           await createNotification(io, {
             recipientId: farmerProfile.userId,
             type: 'new_order',
@@ -151,11 +164,33 @@ const addOrderItems = asyncHandler(async (req, res) => {
             referenceId: createdOrder._id,
           });
         }
-      } catch (err) {
-        console.error('[Notification] Error notifying farmer:', err.message);
-      }
-    }
 
+        // ── Email notification ── only on confirmed payment, no duplicates ──
+        if (paymentConfirmed) {
+          const farmerIdStr = subOrder.farmerId.toString();
+          const alreadySent = createdOrder.farmerEmailsSent.includes(farmerIdStr);
+          if (!alreadySent) {
+            try {
+              const farmerUser = await User.findById(farmerProfile.userId).select('name email');
+              if (farmerUser && farmerUser.email) {
+                await sendFarmerOrderNotificationEmail(farmerUser, req.user, subOrder, createdOrder);
+                // Mark this farmer as notified to prevent re-sends
+                await Order.findByIdAndUpdate(createdOrder._id, {
+                  $addToSet: { farmerEmailsSent: farmerIdStr },
+                });
+              }
+            } catch (emailErr) {
+              console.error('[EmailService] Failed to send farmer order notification email:', emailErr.message);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[Notification] Error notifying farmer:', err.message);
+    }
+  }
+
+  if (io) {
     // Notify admins about new order
     await notifyAllAdmins(io, {
       type: 'new_order',
@@ -167,7 +202,6 @@ const addOrderItems = asyncHandler(async (req, res) => {
       referenceId: createdOrder._id,
     });
   }
-
   res.status(201).json({ success: true, data: createdOrder });
 });
 
@@ -402,6 +436,57 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     { paymentStatus: updatedOrder.paymentStatus },
     { upsert: true }
   );
+
+  // ── Send deferred farmer email for COD orders that just became Completed ──
+  // This catches COD orders where payment only confirms on delivery.
+  if (updatedOrder.paymentStatus === 'Completed') {
+    for (const subOrder of updatedOrder.farmerOrders) {
+      try {
+        const farmerIdStr = subOrder.farmerId?._id?.toString() || subOrder.farmerId?.toString();
+        const alreadySent = (updatedOrder.farmerEmailsSent || []).includes(farmerIdStr);
+        if (!alreadySent && farmerIdStr) {
+          const fp = await FarmerProfile.findById(farmerIdStr);
+          if (fp && fp.userId) {
+            const farmerUser = await User.findById(fp.userId).select('name email');
+            const customer   = await User.findById(updatedOrder.customerId).select('name email');
+            if (farmerUser && farmerUser.email && customer) {
+              await sendFarmerOrderNotificationEmail(farmerUser, customer, subOrder, updatedOrder);
+              await Order.findByIdAndUpdate(updatedOrder._id, {
+                $addToSet: { farmerEmailsSent: farmerIdStr },
+              });
+            }
+          }
+        }
+      } catch (emailErr) {
+        console.error('[EmailService] Deferred farmer email failed:', emailErr.message);
+      }
+    }
+  }
+
+  // ── Send order completion email to farmers whose sub-orders are Delivered ──
+  for (const subOrder of updatedOrder.farmerOrders) {
+    if (subOrder.farmerOrderStatus === 'Delivered') {
+      const farmerIdStr = subOrder.farmerId?._id?.toString() || subOrder.farmerId?.toString();
+      const alreadySentCompletion = (updatedOrder.farmerCompletionEmailsSent || []).includes(farmerIdStr);
+      if (!alreadySentCompletion && farmerIdStr) {
+        try {
+          const fp = await FarmerProfile.findById(farmerIdStr);
+          if (fp && fp.userId) {
+            const farmerUser = await User.findById(fp.userId).select('name email');
+            const customer   = await User.findById(updatedOrder.customerId).select('name email');
+            if (farmerUser && farmerUser.email && customer) {
+              await sendFarmerOrderCompletedEmail(farmerUser, customer, subOrder, updatedOrder);
+              await Order.findByIdAndUpdate(updatedOrder._id, {
+                $addToSet: { farmerCompletionEmailsSent: farmerIdStr },
+              });
+            }
+          }
+        } catch (completionErr) {
+          console.error('[EmailService] Farmer completion email failed:', completionErr.message);
+        }
+      }
+    }
+  }
 
   // Notify customer via Socket.io + persist notification
   const io = req.app.get('io');

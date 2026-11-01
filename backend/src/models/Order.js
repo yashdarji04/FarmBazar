@@ -95,7 +95,17 @@ const orderSchema = new mongoose.Schema(
     isReviewed: {
       type: Boolean,
       default: false
-    }
+    },
+    // Duplicate-prevention flag: tracks which farmerProfile IDs already got a new-order email
+    farmerEmailsSent: {
+      type: [String],
+      default: [],
+    },
+    // Duplicate-prevention flag: tracks which farmerProfile IDs already got a completion email
+    farmerCompletionEmailsSent: {
+      type: [String],
+      default: [],
+    },
   },
   {
     timestamps: true,

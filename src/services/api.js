@@ -2,10 +2,9 @@ import axios from 'axios';
 import { getSessionUser, clearSessionUser } from './authStorage';
 
 // In local dev: Vite proxy forwards /api/* → localhost:5001
-// In production: Connect directly to Render to avoid Vercel proxy timeouts
-const API_URL = import.meta.env.MODE === 'production' 
-  ? 'https://farmbazar-backend-lpu4.onrender.com/api' 
-  : '/api';
+// In production on Vercel: Vercel routes /api/* → backend/server.js
+// Custom endpoint can be configured via VITE_API_URL
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -23,14 +22,14 @@ api.interceptors.request.use(
     // Fix wrong upload URLs used in components (e.g. api.post('/uploads'))
     if (config.url === '/uploads' || config.url.startsWith('/uploads?')) {
       config.url = '/api/uploads';
-      if (import.meta.env.MODE === 'production') {
-        config.url = 'https://farmbazar-backend-lpu4.onrender.com/api/uploads';
+      if (import.meta.env.VITE_API_URL) {
+        config.url = import.meta.env.VITE_API_URL.replace(/\/api$/, '') + '/api/uploads';
       }
     }
     // Handle any absolute paths explicitly starting with /api/
     else if (config.url.startsWith('/api/')) {
-      if (import.meta.env.MODE === 'production') {
-        config.url = 'https://farmbazar-backend-lpu4.onrender.com' + config.url;
+      if (import.meta.env.VITE_API_URL) {
+        config.url = import.meta.env.VITE_API_URL.replace(/\/api$/, '') + config.url;
       }
     }
 

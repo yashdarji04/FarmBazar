@@ -83,6 +83,13 @@ const registerUser = asyncHandler(async (req, res) => {
       }
     }
 
+    // Send welcome / registration notification email (awaited for serverless environments)
+    try {
+      await sendLoginNotification(user, true);
+    } catch (err) {
+      console.error('[EmailService] Failed to send registration notification:', err.message);
+    }
+
     res.status(201).json({
       success: true,
       message: 'User registered successfully',
@@ -164,10 +171,12 @@ const loginUser = asyncHandler(async (req, res) => {
   user.lastLogin = new Date();
   await user.save();
 
-  // Send login notification (non-blocking)
-  sendLoginNotification(user, isFirstTime).catch((err) =>
-    console.error('[EmailService] Failed to send login notification:', err.message)
-  );
+  // Send login notification (must await for serverless environments like Vercel)
+  try {
+    await sendLoginNotification(user, isFirstTime);
+  } catch (err) {
+    console.error('[EmailService] Failed to send login notification:', err.message);
+  }
 
   res.json({
     success: true,
