@@ -24,7 +24,16 @@ export default function GoogleAuthCallback() {
       return;
     }
 
+    const code = params.get('code');
     const token = params.get('token');
+
+    // If Google redirected to the frontend route instead of the backend API,
+    // seamlessly forward the authorization code to the backend to exchange for credentials.
+    if (code && !token) {
+      window.location.href = `/api/auth/google/callback?${params.toString()}`;
+      return;
+    }
+
     const id = params.get('id');
     const name = params.get('name');
     const email = params.get('email');
