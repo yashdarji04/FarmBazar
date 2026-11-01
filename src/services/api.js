@@ -19,17 +19,12 @@ const api = axios.create({
 // other — see services/authStorage.js for why.
 api.interceptors.request.use(
   (config) => {
-    // Fix wrong upload URLs used in components (e.g. api.post('/uploads'))
-    if (config.url === '/uploads' || config.url.startsWith('/uploads?')) {
-      config.url = '/api/uploads';
-      if (import.meta.env.VITE_API_URL) {
-        config.url = import.meta.env.VITE_API_URL.replace(/\/api$/, '') + '/api/uploads';
-      }
-    }
-    // Handle any absolute paths explicitly starting with /api/
-    else if (config.url.startsWith('/api/')) {
-      if (import.meta.env.VITE_API_URL) {
-        config.url = import.meta.env.VITE_API_URL.replace(/\/api$/, '') + config.url;
+    // Prevent accidental double "/api" prefixing when baseURL already includes /api
+    if (config.url) {
+      if (config.url === '/api') {
+        config.url = '/';
+      } else if (config.url.startsWith('/api/')) {
+        config.url = config.url.replace(/^\/api/, '');
       }
     }
 

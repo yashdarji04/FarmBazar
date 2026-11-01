@@ -1,40 +1,23 @@
 import { Navigate } from 'react-router-dom';
-import { useSelector, useDispatch } from 'react-redux';
-import { logout } from '../store/slices/authSlice';
-import { useEffect, useState } from 'react';
-import { ProgressSpinner } from 'primereact/progressspinner';
+import { useSelector } from 'react-redux';
 
 export default function ProtectedRoute({ children, allowedRole }) {
   const { user } = useSelector((state) => state.auth);
-  const dispatch = useDispatch();
-  const [isReady, setIsReady] = useState(false);
 
-  useEffect(() => {
-    if (!user) {
-      setIsReady(true);
-      return;
-    }
-
-    // If user exists but role doesn't match, log them out
-    if (allowedRole && user.role !== allowedRole) {
-      dispatch(logout()).then(() => {
-        setIsReady(true);
-      });
-    } else {
-      setIsReady(true);
-    }
-  }, [user, allowedRole, dispatch]);
-
-  if (!isReady) {
-    return (
-      <div className="min-h-screen w-full flex items-center justify-center">
-        <ProgressSpinner strokeWidth="4" style={{ width: '48px', height: '48px' }} />
-      </div>
-    );
+  if (!user) {
+    return <Navigate to="/login" replace />;
   }
 
-  if (!user || (allowedRole && user.role !== allowedRole)) {
-    return <Navigate to="/login" replace />;
+  // If user role does not match the page's allowed role, safely redirect them
+  // to their own role dashboard instead of destroying their login session.
+  if (allowedRole && user.role !== allowedRole) {
+    const targetDashboard =
+      user.role === 'farmer'
+        ? '/dashboard/farmer'
+        : user.role === 'admin'
+        ? '/dashboard/admin'
+        : '/dashboard/customer';
+    return <Navigate to={targetDashboard} replace />;
   }
 
   return children;

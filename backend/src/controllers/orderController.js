@@ -48,6 +48,16 @@ const addOrderItems = asyncHandler(async (req, res) => {
       throw new Error(`Product not found: ${item.name || item.product}`);
     }
 
+    if (product.isAvailable === false || product.quantity <= 0) {
+      res.status(400);
+      throw new Error(`Produce "${product.name}" is currently out of stock`);
+    }
+
+    if (product.quantity < item.quantity) {
+      res.status(400);
+      throw new Error(`Only ${product.quantity} ${product.unit || 'unit'}(s) available for "${product.name}"`);
+    }
+
     // Determine farmerId: from product or item or fallback
     const resolvedFarmerId = (product.farmerId || item.farmerId || farmerId)?.toString();
     if (!resolvedFarmerId) {
@@ -304,6 +314,7 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
   }
 
   let updatedFarmName = 'Farmer';
+  let affectedSubOrder = null;
 
   if (req.user.role === 'farmer') {
     const farmerProfile = await FarmerProfile.findOne({ userId: req.user._id });
@@ -319,6 +330,7 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
       (fo) => fo.farmerId?._id?.toString() === farmerProfile._id.toString() ||
               fo.farmerId?.toString() === farmerProfile._id.toString()
     );
+    affectedSubOrder = subOrder;
 
     const isLegacyFarmer = order.farmerId?._id?.toString() === farmerProfile._id.toString();
 
@@ -385,6 +397,7 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
                 fo.farmerId?.toString() === farmerId.toString()
       );
       if (subOrder) {
+        affectedSubOrder = subOrder;
         subOrder.farmerOrderStatus = status;
         if (status === 'Accepted') subOrder.acceptedAt = Date.now();
         if (status === 'Packed') subOrder.packedAt = Date.now();
@@ -424,6 +437,22 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
             if (cancelReason) so.cancelReason = cancelReason;
           }
         });
+      }
+    }
+  }
+
+  // Restore inventory if status was changed to Cancelled
+  if (status === 'Cancelled') {
+    const itemsToRestore = affectedSubOrder ? affectedSubOrder.items : order.items;
+    if (itemsToRestore && itemsToRestore.length > 0) {
+      for (const it of itemsToRestore) {
+        const prodId = it.product?._id || it.product;
+        if (prodId) {
+          await Product.findByIdAndUpdate(prodId, {
+            $inc: { quantity: it.quantity },
+            $set: { isAvailable: true },
+          });
+        }
       }
     }
   }

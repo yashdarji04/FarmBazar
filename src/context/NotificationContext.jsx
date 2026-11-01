@@ -97,7 +97,7 @@ export function NotificationProvider({ children }) {
 
   // Socket.io connection and real-time listener
   useEffect(() => {
-    if (!user) {
+    if (!user?._id) {
       setNotifications([]);
       setUnreadCount(0);
       return;
@@ -105,7 +105,14 @@ export function NotificationProvider({ children }) {
 
     fetchNotifications();
 
-    const socketUrl = import.meta.env.MODE === 'production' ? 'https://farmbazar-backend-lpu4.onrender.com' : 'http://localhost:5001';
+    const socketUrl =
+      import.meta.env.VITE_SOCKET_URL ||
+      (import.meta.env.VITE_API_URL
+        ? import.meta.env.VITE_API_URL.replace(/\/api$/, '')
+        : (import.meta.env.MODE === 'production'
+            ? 'https://farmbazar-backend-lpu4.onrender.com'
+            : 'http://localhost:5001'));
+
     const socket = io(socketUrl);
     socketRef.current = socket;
 
@@ -141,7 +148,7 @@ export function NotificationProvider({ children }) {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [user, fetchNotifications]);
+  }, [user?._id, fetchNotifications]);
 
   const value = {
     notifications,

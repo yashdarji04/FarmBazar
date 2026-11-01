@@ -6,6 +6,11 @@ const { protect } = require('../middleware/authMiddleware');
 // POST /api/payment/create-payment-intent
 // Creates a Stripe PaymentIntent and returns the client_secret to the frontend
 router.post('/create-payment-intent', protect, asyncHandler(async (req, res) => {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    res.status(500);
+    throw new Error('Stripe is not configured on the server. Please use Cash on Delivery or configure STRIPE_SECRET_KEY.');
+  }
+
   const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
   const { amount, currency = 'inr' } = req.body;
 

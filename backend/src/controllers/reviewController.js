@@ -69,18 +69,25 @@ const createReview = asyncHandler(async (req, res) => {
   // Update Product Rating
   const productReviews = await Review.find({ product: productId });
   product.totalReviews = productReviews.length;
-  product.rating = productReviews.reduce((acc, item) => item.rating + acc, 0) / productReviews.length;
+  const rawProdRating = productReviews.reduce((acc, item) => item.rating + acc, 0) / (productReviews.length || 1);
+  product.rating = Math.round(rawProdRating * 10) / 10;
   await product.save();
 
   // Update Farmer Rating
-  const farmerReviews = await Review.find({ farmer: product.farmerId });
-  const farmer = await FarmerProfile.findById(product.farmerId);
-  farmer.rating = farmerReviews.reduce((acc, item) => item.rating + acc, 0) / farmerReviews.length;
-  await farmer.save();
+  if (product.farmerId) {
+    const farmerReviews = await Review.find({ farmer: product.farmerId });
+    const farmer = await FarmerProfile.findById(product.farmerId);
+    if (farmer && farmerReviews.length > 0) {
+      const rawFarmerRating = farmerReviews.reduce((acc, item) => item.rating + acc, 0) / farmerReviews.length;
+      farmer.rating = Math.round(rawFarmerRating * 10) / 10;
+      await farmer.save();
+    }
+  }
 
   // Notify farmer about new review
   const io = req.app.get('io');
-  if (io && farmer.userId) {
+  const farmer = product.farmerId ? await FarmerProfile.findById(product.farmerId) : null;
+  if (io && farmer?.userId) {
     await createNotification(io, {
       recipientId: farmer.userId,
       type: 'new_review',

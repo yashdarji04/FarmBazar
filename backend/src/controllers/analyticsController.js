@@ -4,6 +4,17 @@ const Order = require('../models/Order');
 const User = require('../models/User');
 const Product = require('../models/Product');
 
+const parseDateRange = (start, end) => {
+  const matchQuery = {};
+  if (start && !isNaN(new Date(start).getTime())) {
+    matchQuery.$gte = new Date(start);
+  }
+  if (end && !isNaN(new Date(end).getTime())) {
+    matchQuery.$lte = new Date(end);
+  }
+  return Object.keys(matchQuery).length > 0 ? { createdAt: matchQuery } : {};
+};
+
 /**
  * @desc    Get monthly order counts for a given year
  * @route   GET /api/analytics/monthly-orders?year=2023
@@ -55,12 +66,7 @@ const getMonthlyRevenue = asyncHandler(async (req, res) => {
  */
 const getOrdersByStatus = asyncHandler(async (req, res) => {
   const { start, end } = req.query;
-  const matchQuery = {};
-  if (start || end) {
-    matchQuery.createdAt = {};
-    if (start) matchQuery.createdAt.$gte = new Date(start);
-    if (end) matchQuery.createdAt.$lte = new Date(end);
-  }
+  const matchQuery = parseDateRange(start, end);
   
   const raw = await Order.aggregate([
     { $match: matchQuery },
@@ -77,12 +83,7 @@ const getOrdersByStatus = asyncHandler(async (req, res) => {
  */
 const getUsersByRole = asyncHandler(async (req, res) => {
   const { start, end } = req.query;
-  const matchQuery = {};
-  if (start || end) {
-    matchQuery.createdAt = {};
-    if (start) matchQuery.createdAt.$gte = new Date(start);
-    if (end) matchQuery.createdAt.$lte = new Date(end);
-  }
+  const matchQuery = parseDateRange(start, end);
   
   const raw = await User.aggregate([
     { $match: matchQuery },
@@ -99,12 +100,7 @@ const getUsersByRole = asyncHandler(async (req, res) => {
  */
 const getProductsByCategory = asyncHandler(async (req, res) => {
   const { start, end } = req.query;
-  const matchQuery = {};
-  if (start || end) {
-    matchQuery.createdAt = {};
-    if (start) matchQuery.createdAt.$gte = new Date(start);
-    if (end) matchQuery.createdAt.$lte = new Date(end);
-  }
+  const matchQuery = parseDateRange(start, end);
   
   const raw = await Product.aggregate([
     { $match: matchQuery },
@@ -122,12 +118,7 @@ const getProductsByCategory = asyncHandler(async (req, res) => {
  */
 const getTopSellingProducts = asyncHandler(async (req, res) => {
   const { start, end } = req.query;
-  const matchQuery = { orderStatus: { $in: ['Delivered', 'Completed'] } };
-  if (start || end) {
-    matchQuery.createdAt = {};
-    if (start) matchQuery.createdAt.$gte = new Date(start);
-    if (end) matchQuery.createdAt.$lte = new Date(end);
-  }
+  const matchQuery = { orderStatus: { $in: ['Delivered', 'Completed'] }, ...parseDateRange(start, end) };
   
   const raw = await Order.aggregate([
     { $match: matchQuery },
@@ -149,8 +140,8 @@ const getTopSellingProducts = asyncHandler(async (req, res) => {
  */
 const getSalesTimeSeries = asyncHandler(async (req, res) => {
   const { start, end, interval = 'daily' } = req.query;
-  const startDate = start ? new Date(start) : new Date('1970-01-01');
-  const endDate = end ? new Date(end) : new Date();
+  const startDate = start && !isNaN(new Date(start).getTime()) ? new Date(start) : new Date('1970-01-01');
+  const endDate = end && !isNaN(new Date(end).getTime()) ? new Date(end) : new Date();
   const groupId = interval === 'weekly'
     ? { isoWeek: { $isoWeek: '$createdAt' }, year: { $isoWeekYear: '$createdAt' } }
     : { day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } } };

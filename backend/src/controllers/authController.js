@@ -13,6 +13,7 @@ const { notifyAllAdmins } = require('../utils/notificationHelper');
 // ──────────────────────────────────────────────────────────────
 const registerUser = asyncHandler(async (req, res) => {
   const { name, email, password, phone, role, address, city, state, pincode, farmName, farmAddress, farmDescription, governmentId } = req.body;
+  const normalizedEmail = email ? email.trim().toLowerCase() : '';
 
   if (!password || password.length < 6) {
     res.status(400);
@@ -20,7 +21,7 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 
   // Check if user already exists
-  const userExists = await User.findOne({ email });
+  const userExists = await User.findOne({ email: normalizedEmail });
   if (userExists) {
     // If they have a Google account but no password yet, they must use Set Password flow
     if (userExists.googleId && !userExists.password) {
@@ -41,7 +42,7 @@ const registerUser = asyncHandler(async (req, res) => {
   // Create user
   const user = await User.create({
     name,
-    email,
+    email: normalizedEmail,
     password: hashedPassword,
     phone,
     role: assignedRole,
@@ -131,9 +132,10 @@ const registerUser = asyncHandler(async (req, res) => {
 // ──────────────────────────────────────────────────────────────
 const loginUser = asyncHandler(async (req, res) => {
   const { email, password, role: requestedRole } = req.body;
+  const normalizedEmail = email ? email.trim().toLowerCase() : '';
 
   // Fetch user — must select password since it's excluded by default
-  const user = await User.findOne({ email }).select('+password');
+  const user = await User.findOne({ email: normalizedEmail }).select('+password');
 
   // Account exists but was created only via Google (no password set)
   if (user && !user.password) {

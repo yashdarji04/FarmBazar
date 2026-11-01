@@ -36,6 +36,16 @@ export default function TrackOrder() {
         let matched = null;
         if (paramId) {
           matched = orders.find(o => o._id === paramId || o.orderNumber === paramId);
+          if (!matched) {
+            try {
+              const singleRes = await api.get(`/orders/${paramId}`);
+              if (singleRes.data?.data) {
+                matched = singleRes.data.data;
+              }
+            } catch (e) {
+              // Ignore fallback fetch error
+            }
+          }
         }
         if (!matched) {
           // Prefer the most recent order that isn't finished; fall back to the latest order overall

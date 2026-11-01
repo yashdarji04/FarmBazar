@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const asyncHandler = require('express-async-handler');
 const Product = require('../models/Product');
 const FarmerProfile = require('../models/FarmerProfile');
@@ -22,7 +23,7 @@ const getProducts = asyncHandler(async (req, res) => {
   const city = req.query.city ? { city: { $regex: req.query.city, $options: 'i' } } : {};
   
   let farmerFilter = {};
-  if (req.query.farmerId) {
+  if (req.query.farmerId && mongoose.Types.ObjectId.isValid(req.query.farmerId)) {
     const profileByUserId = await FarmerProfile.findOne({ userId: req.query.farmerId });
     if (profileByUserId) {
       farmerFilter = { farmerId: profileByUserId._id };
@@ -60,6 +61,11 @@ const getProducts = asyncHandler(async (req, res) => {
 // @route   GET /api/products/:id
 // @access  Public
 const getProductById = asyncHandler(async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    res.status(404);
+    throw new Error('Product not found');
+  }
+
   const product = await Product.findById(req.params.id).populate('farmerId', 'farmName ownerName farmImage rating verificationStatus city');
 
   if (product) {

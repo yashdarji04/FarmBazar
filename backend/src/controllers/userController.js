@@ -172,7 +172,9 @@ const getAllUsers = asyncHandler(async (req, res) => {
   const farmersProfiles = await FarmerProfile.find({});
   const farmersMap = {};
   farmersProfiles.forEach(fp => {
-    farmersMap[fp.userId.toString()] = fp;
+    if (fp.userId) {
+      farmersMap[fp.userId.toString()] = fp;
+    }
   });
 
   const usersWithProfiles = users.map(user => {
@@ -193,7 +195,10 @@ const getAllUsers = asyncHandler(async (req, res) => {
 // @route   PUT /api/users/admin/farmers/:id/approve
 // @access  Private/Admin
 const approveFarmer = asyncHandler(async (req, res) => {
-  const farmerProfile = await FarmerProfile.findById(req.params.id);
+  let farmerProfile = await FarmerProfile.findById(req.params.id);
+  if (!farmerProfile) {
+    farmerProfile = await FarmerProfile.findOne({ userId: req.params.id });
+  }
   if (farmerProfile) {
     farmerProfile.verificationStatus = 'approved';
     await farmerProfile.save();
@@ -223,7 +228,10 @@ const approveFarmer = asyncHandler(async (req, res) => {
 // @route   PUT /api/users/admin/farmers/:id/reject
 // @access  Private/Admin
 const rejectFarmer = asyncHandler(async (req, res) => {
-  const farmerProfile = await FarmerProfile.findById(req.params.id);
+  let farmerProfile = await FarmerProfile.findById(req.params.id);
+  if (!farmerProfile) {
+    farmerProfile = await FarmerProfile.findOne({ userId: req.params.id });
+  }
   if (farmerProfile) {
     farmerProfile.verificationStatus = 'rejected';
     await farmerProfile.save();

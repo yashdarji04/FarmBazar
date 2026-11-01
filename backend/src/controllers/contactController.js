@@ -58,7 +58,7 @@ const sendContactMessage = asyncHandler(async (req, res) => {
     });
 
     await transporter.sendMail({
-      from: `"HarvestDirect Contact Form" <${process.env.EMAIL_USER}>`,
+      from: `"FarmBazar Contact Form" <${process.env.EMAIL_USER}>`,
       to: process.env.EMAIL_USER,
       replyTo: email,
       subject: `[Contact] ${subject || 'General Inquiry'} — from ${firstName} ${lastName}`,

@@ -171,7 +171,7 @@ export default function AdminDashboard() {
     // Optimistic UI update
     setUsers((prev) =>
       prev.map((u) => {
-        if (u._id !== farmerId) return u;
+        if (u._id !== farmerId && u.farmerProfile?._id !== farmerId) return u;
         return {
           ...u,
           isFarmerApproved: true,
@@ -186,8 +186,11 @@ export default function AdminDashboard() {
       prev
         ? {
             ...prev,
-            pendingFarmers: Math.max(0, (prev.pendingFarmers || 1) - 1),
-            approvedFarmers: (prev.approvedFarmers || 0) + 1,
+            pendingFarmers: Array.isArray(prev.pendingFarmers)
+              ? prev.pendingFarmers.filter(
+                  (f) => f._id !== farmerId && f.userId?._id !== farmerId && f.userId !== farmerId
+                )
+              : [],
           }
         : prev
     );
@@ -206,7 +209,7 @@ export default function AdminDashboard() {
     // Optimistic UI update
     setUsers((prev) =>
       prev.map((u) => {
-        if (u._id !== farmerId) return u;
+        if (u._id !== farmerId && u.farmerProfile?._id !== farmerId) return u;
         return {
           ...u,
           isFarmerApproved: false,
@@ -221,7 +224,11 @@ export default function AdminDashboard() {
       prev
         ? {
             ...prev,
-            pendingFarmers: Math.max(0, (prev.pendingFarmers || 1) - 1),
+            pendingFarmers: Array.isArray(prev.pendingFarmers)
+              ? prev.pendingFarmers.filter(
+                  (f) => f._id !== farmerId && f.userId?._id !== farmerId && f.userId !== farmerId
+                )
+              : [],
           }
         : prev
     );

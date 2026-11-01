@@ -21,6 +21,9 @@ require('./src/controllers/googleAuthController');
 connectDB();
 
 const app = express();
+// Enable trust proxy for cloud hosting behind reverse proxies (Render, Vercel, Heroku)
+app.set('trust proxy', 1);
+
 const server = http.createServer(app);
 // Allow requests from Vercel production URL and localhost dev server
 const allowedOrigins = [
