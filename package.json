@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node -e \"const fs = require('fs'); if (fs.existsSync('backend/uploads')) { if (!fs.existsSync('public/uploads')) fs.mkdirSync('public/uploads', {recursive:true}); for (const f of fs.readdirSync('backend/uploads')) fs.copyFileSync('backend/uploads/' + f, 'public/uploads/' + f); }\" && vite build",
     "start": "node server.js",
     "lint": "oxlint",
     "preview": "vite preview"

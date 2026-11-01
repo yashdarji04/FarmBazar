@@ -18,6 +18,10 @@
       "destination": "/backend/server.js"
     },
     {
+      "source": "/uploads/(.*)",
+      "destination": "/backend/server.js"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

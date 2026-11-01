@@ -108,13 +108,10 @@ export default function Register() {
   };
 
   const handleGoogleLogin = () => {
-    let apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
-    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      if (apiBase.includes('localhost') || apiBase.includes('127.0.0.1')) {
-        apiBase = '/api';
-      }
-    }
-    window.location.href = `${apiBase}/auth/google?role=${accountType}`;
+    // Always route through the verified domain's /api endpoint:
+    // On Vercel live: https://farm-bazar.vercel.app/api/auth/google
+    // On Localhost:   http://localhost:5173/api/auth/google (proxied to port 5001)
+    window.location.href = `/api/auth/google?role=${accountType}`;
   };
 
   return (
