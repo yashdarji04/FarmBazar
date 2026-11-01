@@ -140,21 +140,29 @@ const updateUserProfile = asyncHandler(async (req, res) => {
 // @route   GET /api/users/admin/dashboard
 // @access  Private/Admin
 const getAdminDashboard = asyncHandler(async (req, res) => {
-  // Aggregate some simple stats for the admin dashboard
+  // Aggregate stats for the admin dashboard
   const usersCount = await User.countDocuments();
-  const farmersCount = await User.countDocuments({ role: 'farmer' });
   const customersCount = await User.countDocuments({ role: 'customer' });
+  
+  // Pending farmers (unverified awaiting review)
+  const pendingFarmers = await FarmerProfile.find({ verificationStatus: 'pending' }).populate('userId', 'name email phone');
+  
+  // Active farmers: ONLY farmers with an approved verification status (excludes rejected & pending)
+  const activeFarmersCount = await FarmerProfile.countDocuments({ verificationStatus: 'approved' });
+  const rejectedFarmersCount = await FarmerProfile.countDocuments({ verificationStatus: 'rejected' });
+  const totalRegisteredFarmers = await User.countDocuments({ role: 'farmer' });
   
   const orders = await Order.find({});
   const totalRevenue = orders.reduce((acc, order) => acc + (order.totalAmount || 0), 0);
-  
-  const pendingFarmers = await FarmerProfile.find({ verificationStatus: 'pending' }).populate('userId', 'name email phone');
 
   res.json({
     success: true,
     data: {
       totalUsers: usersCount,
-      totalFarmers: farmersCount,
+      totalFarmers: activeFarmersCount, // Active & verified farmers only (excludes rejected)
+      activeFarmers: activeFarmersCount,
+      rejectedFarmers: rejectedFarmersCount,
+      totalRegisteredFarmers,
       totalCustomers: customersCount,
       totalOrders: orders.length,
       totalRevenue,

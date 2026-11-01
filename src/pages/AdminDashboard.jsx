@@ -1,5 +1,5 @@
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import toast from 'react-hot-toast';
 import { Wheat, Phone } from 'lucide-react';
@@ -65,10 +65,14 @@ export default function AdminDashboard() {
     totalUsers: 0,
     totalCustomers: 0,
     totalFarmers: 0,
+    activeFarmers: 0,
+    rejectedFarmers: 0,
     totalOrders: 0,
     totalRevenue: 0,
     pendingFarmers: []
   });
+  const [farmerStatusFilter, setFarmerStatusFilter] = useState('approved');
+  const [farmerSearch, setFarmerSearch] = useState('');
   const [users, setUsers] = useState([]);
   const [removeDialogVisible, setRemoveDialogVisible] = useState(false);
   const [userToRemove, setUserToRemove] = useState(null);
@@ -168,6 +172,11 @@ export default function AdminDashboard() {
   };
 
   const handleApproveFarmer = async (farmerId) => {
+    // Check if farmer was already approved or rejected
+    const targetUser = users.find((u) => u._id === farmerId || u.farmerProfile?._id === farmerId);
+    const wasAlreadyApproved = targetUser?.farmerProfile?.verificationStatus === 'approved';
+    const wasRejected = targetUser?.farmerProfile?.verificationStatus === 'rejected';
+
     // Optimistic UI update
     setUsers((prev) =>
       prev.map((u) => {
@@ -186,6 +195,9 @@ export default function AdminDashboard() {
       prev
         ? {
             ...prev,
+            totalFarmers: wasAlreadyApproved ? prev.totalFarmers : (prev.totalFarmers || 0) + 1,
+            activeFarmers: wasAlreadyApproved ? prev.activeFarmers : (prev.activeFarmers || 0) + 1,
+            rejectedFarmers: wasRejected ? Math.max(0, (prev.rejectedFarmers || 1) - 1) : (prev.rejectedFarmers || 0),
             pendingFarmers: Array.isArray(prev.pendingFarmers)
               ? prev.pendingFarmers.filter(
                   (f) => f._id !== farmerId && f.userId?._id !== farmerId && f.userId !== farmerId
@@ -206,6 +218,11 @@ export default function AdminDashboard() {
   };
 
   const handleRejectFarmer = async (farmerId) => {
+    // Check if farmer was previously active/approved or already rejected
+    const targetUser = users.find((u) => u._id === farmerId || u.farmerProfile?._id === farmerId);
+    const wasApproved = targetUser?.farmerProfile?.verificationStatus === 'approved';
+    const wasAlreadyRejected = targetUser?.farmerProfile?.verificationStatus === 'rejected';
+
     // Optimistic UI update
     setUsers((prev) =>
       prev.map((u) => {
@@ -224,6 +241,9 @@ export default function AdminDashboard() {
       prev
         ? {
             ...prev,
+            totalFarmers: wasApproved ? Math.max(0, (prev.totalFarmers || 1) - 1) : (prev.totalFarmers || 0),
+            activeFarmers: wasApproved ? Math.max(0, (prev.activeFarmers || 1) - 1) : (prev.activeFarmers || 0),
+            rejectedFarmers: wasAlreadyRejected ? (prev.rejectedFarmers || 0) : (prev.rejectedFarmers || 0) + 1,
             pendingFarmers: Array.isArray(prev.pendingFarmers)
               ? prev.pendingFarmers.filter(
                   (f) => f._id !== farmerId && f.userId?._id !== farmerId && f.userId !== farmerId
@@ -255,6 +275,9 @@ export default function AdminDashboard() {
       return;
     }
     const targetId = userToRemove.id;
+    const targetUser = users.find((u) => u._id === targetId);
+    const wasApprovedFarmer = targetUser?.role === 'farmer' && targetUser?.farmerProfile?.verificationStatus === 'approved';
+    const wasRejectedFarmer = targetUser?.role === 'farmer' && targetUser?.farmerProfile?.verificationStatus === 'rejected';
     setRemoveDialogVisible(false);
 
     // Optimistic UI update
@@ -264,6 +287,9 @@ export default function AdminDashboard() {
         ? {
             ...prev,
             totalUsers: Math.max(0, (prev.totalUsers || 1) - 1),
+            totalFarmers: wasApprovedFarmer ? Math.max(0, (prev.totalFarmers || 1) - 1) : (prev.totalFarmers || 0),
+            activeFarmers: wasApprovedFarmer ? Math.max(0, (prev.activeFarmers || 1) - 1) : (prev.activeFarmers || 0),
+            rejectedFarmers: wasRejectedFarmer ? Math.max(0, (prev.rejectedFarmers || 1) - 1) : (prev.rejectedFarmers || 0),
           }
         : prev
     );
@@ -294,7 +320,40 @@ export default function AdminDashboard() {
     }
   };
 
-  const farmers = users.filter(u => u.role === 'farmer');
+  const allFarmers = useMemo(() => users.filter((u) => u.role === 'farmer'), [users]);
+  const activeFarmers = useMemo(
+    () => allFarmers.filter((f) => f.farmerProfile?.verificationStatus === 'approved'),
+    [allFarmers]
+  );
+  const pendingFarmersList = useMemo(
+    () => allFarmers.filter((f) => !f.farmerProfile || f.farmerProfile?.verificationStatus === 'pending'),
+    [allFarmers]
+  );
+  const rejectedFarmersList = useMemo(
+    () => allFarmers.filter((f) => f.farmerProfile?.verificationStatus === 'rejected'),
+    [allFarmers]
+  );
+
+  const filteredFarmers = useMemo(() => {
+    return allFarmers.filter((f) => {
+      // 1. Status Filter
+      if (farmerStatusFilter === 'approved' && f.farmerProfile?.verificationStatus !== 'approved') return false;
+      if (farmerStatusFilter === 'pending' && f.farmerProfile?.verificationStatus !== 'pending') return false;
+      if (farmerStatusFilter === 'rejected' && f.farmerProfile?.verificationStatus !== 'rejected') return false;
+
+      // 2. Search Query Filter
+      if (farmerSearch.trim()) {
+        const q = farmerSearch.trim().toLowerCase();
+        const nameMatch = f.name?.toLowerCase().includes(q);
+        const emailMatch = f.email?.toLowerCase().includes(q);
+        const farmNameMatch = f.farmerProfile?.farmName?.toLowerCase().includes(q);
+        const cityMatch = f.farmerProfile?.city?.toLowerCase().includes(q);
+        if (!nameMatch && !emailMatch && !farmNameMatch && !cityMatch) return false;
+      }
+      return true;
+    });
+  }, [allFarmers, farmerStatusFilter, farmerSearch]);
+
   const customers = users.filter(u => u.role === 'customer');
 
   const renderDashboard = () => (
@@ -319,19 +378,26 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Active Farmers */}
-        <div className="relative overflow-hidden bg-white/70 dark:bg-[#111827]/70 backdrop-blur-xl rounded-[2rem] p-6 shadow-xl shadow-slate-200/40 dark:shadow-none border border-white/50 dark:border-white/5 group hover:-translate-y-1 hover:shadow-2xl hover:shadow-emerald-500/10 transition-all duration-300">
+        {/* Active Farmers (Excludes Rejected & Pending) */}
+        <div
+          onClick={() => { setActiveTab('farmers'); setFarmerStatusFilter('approved'); }}
+          className="relative overflow-hidden bg-white/70 dark:bg-[#111827]/70 backdrop-blur-xl rounded-[2rem] p-6 shadow-xl shadow-slate-200/40 dark:shadow-none border border-white/50 dark:border-white/5 group hover:-translate-y-1 hover:shadow-2xl hover:shadow-emerald-500/10 transition-all duration-300 cursor-pointer"
+          title="Click to view Active Farmers"
+        >
           <div className="relative z-10 flex justify-between items-start mb-8">
             <div className="w-12 h-12 rounded-2xl bg-emerald-500 flex items-center justify-center text-white shadow-sm">
               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="7" rx="2" ry="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></svg>
             </div>
             <span className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold tracking-wide uppercase">
-              VERIFIED
+              APPROVED ONLY
             </span>
           </div>
           <div className="relative z-10">
-            <div className="text-3xl font-black text-slate-800 dark:text-white tracking-tight leading-none">{loading ? '...' : stats.totalFarmers || 0}</div>
+            <div className="text-3xl font-black text-slate-800 dark:text-white tracking-tight leading-none">
+              {loading ? '...' : (stats.activeFarmers !== undefined ? stats.activeFarmers : activeFarmers.length)}
+            </div>
             <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-2 uppercase tracking-wider">Active Farmers</h3>
+            <p className="text-[11px] text-slate-400 mt-1 font-medium">Excludes rejected & pending accounts</p>
           </div>
         </div>
 
@@ -448,14 +514,109 @@ export default function AdminDashboard() {
           </div>
           <div>
             <h2 className="text-xl font-black text-slate-800 dark:text-white tracking-tight">Farmers Directory</h2>
-            <p className="text-sm font-medium text-slate-500 mt-0.5">Manage and review seller accounts</p>
+            <p className="text-sm font-medium text-slate-500 mt-0.5">Manage and review verified, pending, and rejected farmers</p>
           </div>
         </div>
         <div className="bg-white dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-2">
           <i className="pi pi-search text-slate-400"></i>
-          <input type="text" placeholder="Search farmers..." className="bg-transparent border-none outline-none text-sm font-semibold w-full sm:w-48 text-slate-700 dark:text-slate-200 placeholder-slate-400" />
+          <input
+            type="text"
+            placeholder="Search farmers..."
+            value={farmerSearch}
+            onChange={(e) => setFarmerSearch(e.target.value)}
+            className="bg-transparent border-none outline-none text-sm font-semibold w-full sm:w-48 text-slate-700 dark:text-slate-200 placeholder-slate-400"
+          />
+          {farmerSearch && (
+            <button
+              onClick={() => setFarmerSearch('')}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              title="Clear search"
+            >
+              <i className="pi pi-times text-xs"></i>
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Filter Tabs: Active, All, Pending, Rejected */}
+      <div className="px-8 py-3.5 border-b border-slate-100/80 dark:border-white/5 bg-slate-50/40 dark:bg-white/[0.01] flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => setFarmerStatusFilter('approved')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            farmerStatusFilter === 'approved'
+              ? 'bg-emerald-600 border-emerald-600 text-white shadow-md shadow-emerald-600/25'
+              : 'bg-white dark:bg-white/5 border-slate-200/80 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-emerald-300 dark:hover:border-emerald-500/30'
+          }`}
+        >
+          <i className="pi pi-check-circle text-xs"></i>
+          Active Farmers
+          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
+            farmerStatusFilter === 'approved'
+              ? 'bg-white/20 text-white'
+              : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400'
+          }`}>
+            {activeFarmers.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setFarmerStatusFilter('all')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            farmerStatusFilter === 'all'
+              ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/25'
+              : 'bg-white dark:bg-white/5 border-slate-200/80 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-indigo-300 dark:hover:border-indigo-500/30'
+          }`}
+        >
+          <i className="pi pi-users text-xs"></i>
+          All Farmers
+          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
+            farmerStatusFilter === 'all'
+              ? 'bg-white/20 text-white'
+              : 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400'
+          }`}>
+            {allFarmers.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setFarmerStatusFilter('pending')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            farmerStatusFilter === 'pending'
+              ? 'bg-amber-600 border-amber-600 text-white shadow-md shadow-amber-600/25'
+              : 'bg-white dark:bg-white/5 border-slate-200/80 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-amber-300 dark:hover:border-amber-500/30'
+          }`}
+        >
+          <i className="pi pi-clock text-xs"></i>
+          Pending Review
+          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
+            farmerStatusFilter === 'pending'
+              ? 'bg-white/20 text-white'
+              : 'bg-amber-50 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400'
+          }`}>
+            {pendingFarmersList.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setFarmerStatusFilter('rejected')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            farmerStatusFilter === 'rejected'
+              ? 'bg-red-600 border-red-600 text-white shadow-md shadow-red-600/25'
+              : 'bg-white dark:bg-white/5 border-slate-200/80 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-red-300 dark:hover:border-red-500/30'
+          }`}
+        >
+          <i className="pi pi-times-circle text-xs"></i>
+          Rejected
+          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
+            farmerStatusFilter === 'rejected'
+              ? 'bg-white/20 text-white'
+              : 'bg-red-50 text-red-600 dark:bg-red-500/20 dark:text-red-400'
+          }`}>
+            {rejectedFarmersList.length}
+          </span>
+        </button>
+      </div>
+
       <div className="overflow-x-auto pb-4">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -470,10 +631,20 @@ export default function AdminDashboard() {
           <tbody className="divide-y divide-slate-100/50 dark:divide-white/5">
             {loading ? (
               <tr><td colSpan="5" className="p-16 text-center"><div className="inline-block w-8 h-8 border-4 border-emerald-100 border-t-emerald-500 rounded-full animate-spin"></div></td></tr>
-            ) : farmers.length === 0 ? (
-              <tr><td colSpan="5" className="p-16 text-center text-slate-400 font-bold">No farmers found in directory.</td></tr>
+            ) : filteredFarmers.length === 0 ? (
+              <tr>
+                <td colSpan="5" className="p-16 text-center text-slate-400 font-bold">
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <i className="pi pi-users text-3xl text-slate-300 dark:text-slate-600 mb-1"></i>
+                    <span>
+                      No {farmerStatusFilter === 'approved' ? 'active' : farmerStatusFilter === 'rejected' ? 'rejected' : farmerStatusFilter === 'pending' ? 'pending' : ''} farmers found
+                      {farmerSearch ? ` matching "${farmerSearch}"` : ' in directory'}.
+                    </span>
+                  </div>
+                </td>
+              </tr>
             ) : (
-              farmers.map(f => (
+              filteredFarmers.map(f => (
                 <tr key={f._id} className="hover:bg-slate-50/80 dark:hover:bg-white/[0.02] transition-colors group">
                   <td className="px-4 py-5">
                     <div className="flex items-center gap-4">
@@ -492,30 +663,82 @@ export default function AdminDashboard() {
                   <td className="px-4 py-5">
                     <div className="font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-2">
                       <i className="pi pi-map-marker text-slate-400 text-xs"></i>
-                      {f.farmerProfile ? `${f.farmerProfile.city}, ${f.farmerProfile.state}` : 'N/A'}
+                      {f.farmerProfile ? `${f.farmerProfile.city || 'N/A'}, ${f.farmerProfile.state || ''}` : 'N/A'}
                     </div>
                   </td>
                   <td className="px-4 py-5">
-                    <span className={`px-3 py-1.5 rounded-xl text-xs font-bold tracking-wide uppercase shadow-sm ${f.farmerProfile?.verificationStatus === 'approved'
-                        ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400'
-                        : 'bg-orange-50 text-orange-600 border border-orange-100 dark:bg-orange-500/10 dark:border-orange-500/20 dark:text-orange-400'
-                      }`}>
-                      {f.farmerProfile?.verificationStatus || 'Unknown'}
-                    </span>
+                    {f.farmerProfile?.verificationStatus === 'approved' ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold tracking-wide uppercase shadow-sm bg-emerald-50 text-emerald-600 border border-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400">
+                        <i className="pi pi-check-circle text-xs"></i>
+                        Active
+                      </span>
+                    ) : f.farmerProfile?.verificationStatus === 'rejected' ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold tracking-wide uppercase shadow-sm bg-red-50 text-red-600 border border-red-100 dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400">
+                        <i className="pi pi-times-circle text-xs"></i>
+                        Rejected
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold tracking-wide uppercase shadow-sm bg-amber-50 text-amber-600 border border-amber-100 dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-400">
+                        <i className="pi pi-clock text-xs"></i>
+                        Pending
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-5 text-right">
-                    {f.farmerProfile?.verificationStatus === 'pending' ? (
-                      <div className="flex justify-end gap-2 opacity-100">
-                        <button onClick={() => handleRejectFarmer(f.farmerProfile._id)} className="px-4 py-2 bg-red-50 hover:bg-red-500 hover:text-white text-red-600 rounded-xl border-none font-bold text-xs shadow-sm transition-all">Reject</button>
-                        <button onClick={() => handleApproveFarmer(f.farmerProfile._id)} className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl border-none font-bold text-xs shadow-md shadow-emerald-500/20 transition-all">Approve</button>
-                      </div>
-                    ) : (
-                      <div className="flex justify-end gap-2 opacity-100">
-                        <button onClick={() => handleRemoveUser(f._id, f.name)} className="px-4 py-2 bg-red-50 hover:bg-red-500 hover:text-white text-red-600 rounded-xl border-none font-bold text-xs shadow-sm transition-all flex items-center gap-1">
-                          <i className="pi pi-trash text-[10px]"></i> Remove
-                        </button>
-                      </div>
-                    )}
+                    <div className="flex justify-end items-center gap-2">
+                      {f.farmerProfile?.verificationStatus === 'pending' ? (
+                        <>
+                          <button
+                            onClick={() => handleRejectFarmer(f.farmerProfile?._id || f._id)}
+                            className="px-3 py-1.5 bg-red-50 hover:bg-red-500 hover:text-white text-red-600 rounded-xl border-none font-bold text-xs shadow-sm transition-all flex items-center gap-1"
+                            title="Reject Farmer"
+                          >
+                            <i className="pi pi-times text-[10px]"></i> Reject
+                          </button>
+                          <button
+                            onClick={() => handleApproveFarmer(f.farmerProfile?._id || f._id)}
+                            className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl border-none font-bold text-xs shadow-md shadow-emerald-500/20 transition-all flex items-center gap-1"
+                            title="Approve Farmer"
+                          >
+                            <i className="pi pi-check text-[10px]"></i> Approve
+                          </button>
+                        </>
+                      ) : f.farmerProfile?.verificationStatus === 'rejected' ? (
+                        <>
+                          <button
+                            onClick={() => handleApproveFarmer(f.farmerProfile?._id || f._id)}
+                            className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl border-none font-bold text-xs shadow-md shadow-emerald-500/20 transition-all flex items-center gap-1"
+                            title="Re-Approve & Restore Farmer"
+                          >
+                            <i className="pi pi-check text-[10px]"></i> Re-Approve
+                          </button>
+                          <button
+                            onClick={() => handleRemoveUser(f._id, f.name)}
+                            className="px-3 py-1.5 bg-red-50 hover:bg-red-500 hover:text-white text-red-600 rounded-xl border-none font-bold text-xs shadow-sm transition-all flex items-center gap-1"
+                            title="Remove Farmer Account"
+                          >
+                            <i className="pi pi-trash text-[10px]"></i> Remove
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleRejectFarmer(f.farmerProfile?._id || f._id)}
+                            className="px-3 py-1.5 bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-600 rounded-xl border-none font-bold text-xs shadow-sm transition-all flex items-center gap-1"
+                            title="Deactivate / Reject Farmer"
+                          >
+                            <i className="pi pi-ban text-[10px]"></i> Reject
+                          </button>
+                          <button
+                            onClick={() => handleRemoveUser(f._id, f.name)}
+                            className="px-3 py-1.5 bg-red-50 hover:bg-red-500 hover:text-white text-red-600 rounded-xl border-none font-bold text-xs shadow-sm transition-all flex items-center gap-1"
+                            title="Remove Farmer Account"
+                          >
+                            <i className="pi pi-trash text-[10px]"></i> Remove
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))
