@@ -7,6 +7,45 @@ const generateToken = require('../utils/generateToken');
 const { sendLoginNotification } = require('../services/emailService');
 
 // ──────────────────────────────────────────────────────────────
+// Resolvers for OAuth callback and client redirect URLs
+// ──────────────────────────────────────────────────────────────
+const getCallbackURL = (req) => {
+  if (req) {
+    const host = req.headers['x-forwarded-host'] || req.headers.host || '';
+    if (host.includes('vercel.app')) {
+      return `https://${host}/api/auth/google/callback`;
+    }
+    if (host.includes('onrender.com')) {
+      return `https://${host}/api/auth/google/callback`;
+    }
+    if (host.includes('localhost') || host.includes('127.0.0.1')) {
+      const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+      return `${proto}://${host}/api/auth/google/callback`;
+    }
+  }
+  if (process.env.SERVER_URL && !process.env.SERVER_URL.includes('localhost')) {
+    return `${process.env.SERVER_URL.replace(/\/$/, '')}/api/auth/google/callback`;
+  }
+  return 'https://farm-bazar.vercel.app/api/auth/google/callback';
+};
+
+const getClientURL = (req) => {
+  if (req) {
+    const host = req.headers['x-forwarded-host'] || req.headers.host || '';
+    if (host.includes('vercel.app')) {
+      return `https://${host}`;
+    }
+    if (host.includes('localhost') || host.includes('127.0.0.1')) {
+      return process.env.CLIENT_URL || 'http://localhost:5173';
+    }
+  }
+  if (process.env.CLIENT_URL && !process.env.CLIENT_URL.includes('localhost')) {
+    return process.env.CLIENT_URL.replace(/\/$/, '');
+  }
+  return 'https://farm-bazar.vercel.app';
+};
+
+// ──────────────────────────────────────────────────────────────
 // Passport Google Strategy
 // ──────────────────────────────────────────────────────────────
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
@@ -15,7 +54,9 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: `${process.env.SERVER_URL || (process.env.NODE_ENV === 'production' ? 'https://farm-bazar.vercel.app' : 'http://localhost:5001')}/api/auth/google/callback`,
+      callbackURL: process.env.SERVER_URL
+        ? `${process.env.SERVER_URL.replace(/\/$/, '')}/api/auth/google/callback`
+        : 'https://farm-bazar.vercel.app/api/auth/google/callback',
       passReqToCallback: true,
     },
     async (req, accessToken, refreshToken, profile, done) => {
@@ -134,15 +175,17 @@ passport.deserializeUser((data, done) => done(null, data));
 // @access  Public
 // ──────────────────────────────────────────────────────────────
 const googleAuth = (req, res, next) => {
+  const clientURL = getClientURL(req);
   if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-    const clientURL = process.env.CLIENT_URL || (process.env.NODE_ENV === 'production' ? 'https://farm-bazar.vercel.app' : 'http://localhost:5173');
     return res.redirect(`${clientURL}/login?error=${encodeURIComponent('Google login is not configured on this server')}`);
   }
   const role = ['customer', 'farmer'].includes(req.query.role) ? req.query.role : 'customer';
+  const callbackURL = getCallbackURL(req);
   passport.authenticate('google', {
     scope: ['profile', 'email'],
     session: false,
     state: role,
+    callbackURL,
   })(req, res, next);
 };
 
@@ -153,9 +196,9 @@ const googleAuth = (req, res, next) => {
 // ──────────────────────────────────────────────────────────────
 const googleAuthCallback = [
   (req, res, next) => {
-    passport.authenticate('google', { session: false }, (err, data) => {
-      const clientURL = process.env.CLIENT_URL || (process.env.NODE_ENV === 'production' ? 'https://farm-bazar.vercel.app' : 'http://localhost:5173');
-
+    const clientURL = getClientURL(req);
+    const callbackURL = getCallbackURL(req);
+    passport.authenticate('google', { session: false, callbackURL }, (err, data) => {
       if (err) {
         // Strip the "Role Mismatch: " prefix — the rest is the user-facing message
         if (err.message && err.message.startsWith('Role Mismatch: ')) {
@@ -176,7 +219,7 @@ const googleAuthCallback = [
   asyncHandler(async (req, res) => {
     const { user, isNew } = req.user;
     const token = generateToken(user._id);
-    const clientURL = process.env.CLIENT_URL || (process.env.NODE_ENV === 'production' ? 'https://farm-bazar.vercel.app' : 'http://localhost:5173');
+    const clientURL = getClientURL(req);
 
     const isFirstTime = !user.lastLogin;
     user.lastLogin = new Date();

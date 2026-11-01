@@ -99,7 +99,12 @@ export default function Login() {
   };
 
   const handleGoogleLogin = () => {
-    const apiBase = import.meta.env.VITE_API_URL || '/api';
+    let apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
+    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      if (apiBase.includes('localhost') || apiBase.includes('127.0.0.1')) {
+        apiBase = '/api';
+      }
+    }
     window.location.href = `${apiBase}/auth/google?role=${accountType}`;
   };
 
