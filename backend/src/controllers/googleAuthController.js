@@ -9,8 +9,9 @@ const { sendLoginNotification } = require('../services/emailService');
 // ──────────────────────────────────────────────────────────────
 // Passport Google Strategy
 // ──────────────────────────────────────────────────────────────
-passport.use(
-  new GoogleStrategy(
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  passport.use(
+    new GoogleStrategy(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -119,6 +120,9 @@ passport.use(
     }
   )
 );
+} else {
+  console.warn('[Auth] GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET not configured. Google login will be disabled.');
+}
 
 // Stateless serialise/deserialise (no server-side sessions — JWT only)
 passport.serializeUser((data, done) => done(null, data));
@@ -130,6 +134,10 @@ passport.deserializeUser((data, done) => done(null, data));
 // @access  Public
 // ──────────────────────────────────────────────────────────────
 const googleAuth = (req, res, next) => {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    const clientURL = process.env.CLIENT_URL || (process.env.NODE_ENV === 'production' ? 'https://farm-bazar.vercel.app' : 'http://localhost:5173');
+    return res.redirect(`${clientURL}/login?error=${encodeURIComponent('Google login is not configured on this server')}`);
+  }
   const role = ['customer', 'farmer'].includes(req.query.role) ? req.query.role : 'customer';
   passport.authenticate('google', {
     scope: ['profile', 'email'],

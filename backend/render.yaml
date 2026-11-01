@@ -5,6 +5,8 @@ services:
     rootDir: .
     buildCommand: npm install
     startCommand: node server.js
+    healthCheckPath: /health
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
@@ -19,13 +21,13 @@ services:
       - key: JWT_REFRESH_SECRET
         sync: false
       - key: CLIENT_URL
-        sync: false
+        value: https://farm-bazar.vercel.app
       - key: SERVER_URL
-        sync: false
+        value: https://farmbazar-backend-lpu4.onrender.com
       - key: EMAIL_HOST
         value: smtp.gmail.com
       - key: EMAIL_PORT
-        value: 587
+        value: 465
       - key: EMAIL_USER
         sync: false
       - key: EMAIL_PASS

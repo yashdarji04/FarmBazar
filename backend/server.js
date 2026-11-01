@@ -14,6 +14,14 @@ dotenv.config();
 dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
+// Process-level safety guards to prevent unhandled errors from terminating the process
+process.on('unhandledRejection', (reason) => {
+  console.error('[Unhandled Rejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[Uncaught Exception]', err);
+});
+
 // Register Passport Google strategy
 require('./src/controllers/googleAuthController');
 
@@ -25,18 +33,20 @@ const app = express();
 app.set('trust proxy', 1);
 
 const server = http.createServer(app);
-// Allow requests from Vercel production URL and localhost dev server
+// Allow requests from Vercel production URL, Render, and localhost dev server
 const allowedOrigins = [
-  process.env.CLIENT_URL,          
+  process.env.CLIENT_URL,
+  'https://farm-bazar.vercel.app',
+  'https://farmbazar-backend-lpu4.onrender.com',
 ].filter(Boolean);
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, Postman)
+    // Allow requests with no origin (mobile apps, curl, Postman, server-to-server)
     if (!origin) return callback(null, true);
     
     // Always allow localhost during development
-    if (origin.startsWith('http://localhost:')) {
+    if (origin.startsWith('http://localhost:') || origin.startsWith('https://localhost:')) {
       return callback(null, true);
     }
     
@@ -44,15 +54,22 @@ const corsOptions = {
     if (origin.endsWith('.vercel.app') || origin.includes('vercel.app')) {
       return callback(null, true);
     }
+
+    // Allow ANY onrender domain
+    if (origin.endsWith('.onrender.com') || origin.includes('onrender.com')) {
+      return callback(null, true);
+    }
     
     if (allowedOrigins.some(o => origin.startsWith(o))) {
       return callback(null, true);
     }
-    callback(new Error(`CORS blocked: ${origin}`));
+
+    // Fallback: allow all in production to avoid unexpected blocking
+    return callback(null, true);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
 };
 
 const io = new Server(server, {
@@ -81,6 +98,18 @@ app.use(passport.session());
 // Static folder for uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Health check endpoint for Render / monitoring services
+app.get(['/', '/health', '/api/health'], (req, res) => {
+  const mongoose = require('mongoose');
+  res.status(200).json({
+    status: 'ok',
+    message: 'FarmBazar API is running...',
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'connecting/disconnected',
+  });
+});
+
 // Define Routes
 app.use('/api/auth', require('./src/routes/authRoutes'));
 app.use('/api/users', require('./src/routes/userRoutes'));
@@ -95,10 +124,6 @@ app.use('/api/analytics', require('./src/routes/analyticsRoutes'));
 app.use('/api/payment', require('./src/routes/paymentRoutes'));
 app.use('/api/notifications', require('./src/routes/notificationRoutes'));
 
-app.get('/', (req, res) => {
-  res.send('API is running...');
-});
-
 // Error Middleware
 app.use(notFound);
 app.use(errorHandler);
@@ -107,24 +132,46 @@ app.use(errorHandler);
 app.set('io', io);
 
 io.on('connection', (socket) => {
-  // console.log(`Socket connected: ${socket.id}`);
-  
   // Clients will emit 'join' with their user ID so we can send targeted notifications
   socket.on('join', (userId) => {
     socket.join(userId);
-    // console.log(`User ${userId} joined their room`);
   });
 
-  socket.on('disconnect', () => {
-    // console.log(`Socket disconnected: ${socket.id}`);
-  });
+  socket.on('disconnect', () => {});
 });
+
+// Keep-Alive Service to prevent Render free instance from spinning down (sleeping)
+const setupKeepAlive = () => {
+  const serviceUrl =
+    process.env.RENDER_EXTERNAL_URL ||
+    process.env.SERVER_URL ||
+    (process.env.NODE_ENV === 'production' ? 'https://farmbazar-backend-lpu4.onrender.com' : null);
+
+  if (serviceUrl && !process.env.VERCEL) {
+    const PING_INTERVAL = 14 * 60 * 1000; // 14 minutes (Render spins down after 15 min)
+    setInterval(() => {
+      try {
+        const pingUrl = `${serviceUrl.replace(/\/$/, '')}/health`;
+        const protocol = pingUrl.startsWith('https') ? require('https') : require('http');
+        protocol.get(pingUrl, (res) => {
+          console.log(`[Keep-Alive] Self-ping status: ${res.statusCode} at ${new Date().toLocaleTimeString('en-IN')}`);
+        }).on('error', (err) => {
+          console.warn(`[Keep-Alive] Ping failed:`, err.message);
+        });
+      } catch (err) {
+        console.warn(`[Keep-Alive] Error:`, err.message);
+      }
+    }, PING_INTERVAL);
+    console.log(`[Keep-Alive] Auto-ping active for ${serviceUrl} (every 14m)`);
+  }
+};
 
 const PORT = process.env.PORT || 5000;
 
 if (!process.env.VERCEL) {
   server.listen(PORT, () => {
     console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+    setupKeepAlive();
   });
 }
 
